@@ -30,9 +30,14 @@ weight**.
   that paginate or re-sort update automatically.
 - Search pages are normalized to **25 results per page** (added to the search
   hash when missing or smaller, so page counts stay consistent).
-- Every result also gets a **green cost badge** (`≈ $12`): estimated yarn cost =
-  grams × the **price/100g** value in the filter panel (default $10, in the
-  currency you think in — it's a rough shopping guide, not a quote).
+- Every result also gets a **green cost badge** (e.g. `≈ €12`). For patterns the
+  cost is computed from **live yarn prices at Hobbii (hobbii.de, EUR)**: each
+  suggested yarn on the pattern page is matched against Hobbii's catalogue and
+  priced per gram, then multiplied by the meters each strand uses. This works
+  across combined yarns too (each strand is priced with its own yarn). Hover the
+  badge to see which yarns were matched. If a yarn can't be matched (exact
+  brand/colorways often differ) the badge falls back to the manual
+  **price/100g** value in the filter panel (default $10) and shows `$`.
 
 ## Install (unpacked, developer mode)
 
@@ -45,6 +50,10 @@ weight**.
 
 ## Limitations
 
+- Store prices come from **Hobbii (hobbii.de, EUR)** — Hobbii carries its own
+  brands, so a pattern yarn like "DROPS Kid-Silk" may be priced with the closest
+  matching product (e.g. "Friends Kid Silk"), and some yarns have no comparable
+  product and fall back to the manual price/100g setting.
 - Pattern gram values are estimates from yardage + yarn weight class, not exact
   numbers — multi-strand or heavily-cabled work will deviate.
 - Projects with only yardage/skeins recorded show "no g" and can be hidden via
@@ -60,6 +69,7 @@ weight**.
 | -------------- | ---------------------------------------------------- |
 | `manifest.json`| Extension manifest (Manifest V3, icons, permissions)  |
 | `content.js`   | Chip injection, gram parsing/estimation, filtering    |
+| `background.js`| Service worker: Hobbii (EU) yarn price lookups        |
 | `panel.css`    | Styling for the filter panel and chips                |
 | `icons/`       | Toolbar/extension icons (yarn ball)                   |
 | `make_icon.py` | Script that generates the icons                       |

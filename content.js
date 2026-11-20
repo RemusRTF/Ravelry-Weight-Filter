@@ -7,7 +7,7 @@
   const GRAMS_PER_OUNCE = 28.349523125;
   const GRAMS_PER_POUND = 453.59237;
   const METERS_PER_YARD = 0.9144;
-  const CACHE_KEY = 'rgfCacheV3';
+  const CACHE_KEY = 'rgfCacheV4';
   const FILTER_KEY = 'rgfFilter';
   const STATUS_KEY = 'rgfStatus';
   const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
@@ -133,6 +133,12 @@
     return null;
   }
 
+  function attachStrands(result, yarnBlocks, combined) {
+    if (!yarnBlocks || !yarnBlocks.length) return;
+    result.suggested = yarnBlocks.map((b) => ({ name: b.name, gpm: b.gpm }));
+    result.strandCount = combined && combined.combined ? combined.names.length : 1;
+  }
+
   function suggestedYarnDensity(bodyText) {
     const m = /([\d.,]+)\s*(?:meters?|m)\s*\/\s*([\d.,]+)\s*(?:grams?|g)\b/i.exec(bodyText);
     if (!m) return null;
@@ -140,6 +146,37 @@
     const grams = parseNumber(m[2]);
     if (!meters || !grams || meters <= 0) return null;
     return grams / meters;
+  }
+
+  function suggestedYarnBlocks(doc) {
+    const out = [];
+    const seen = new Set();
+    for (const block of doc.querySelectorAll('.yarn_summary')) {
+      if (block.querySelector('.yarn_summary')) continue;
+      const a = block.querySelector('.yarn_name a[href*="/yarns/library/"]');
+      if (!a) continue;
+      const slug = (a.getAttribute('href') || '').replace(/^.*\/yarns\/library\//, '').replace(/\/.*$/, '');
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const yardText = ((block.querySelector('.yardage') || block).textContent || '').replace(/\s+/g, ' ');
+      let m = /([\d.,]+)\s*(?:meters?|metres?|m)\b\s*\/\s*([\d.,]+)\s*(?:grams?|g)\b/i.exec(yardText);
+      let factor = 1;
+      if (!m) {
+        m = /([\d.,]+)\s*(?:yards?|yds?)\b\s*\/\s*([\d.,]+)\s*(?:grams?|g)\b/i.exec(yardText);
+        factor = METERS_PER_YARD;
+      }
+      if (!m) continue;
+      const meters = parseNumber(m[1]);
+      const grams = parseNumber(m[2]);
+      if (!meters || !grams || meters <= 0 || grams <= 0) continue;
+      out.push({
+        name: (a.textContent || '').trim(),
+        gpm: grams / (meters * factor),
+        metersPerBall: meters * factor,
+        gramsPerBall: grams
+      });
+    }
+    return out;
   }
 
   function parseDefault(html) {
@@ -166,16 +203,18 @@
     }
 
     const yardText = labeledFieldText(doc, 'Yardage') || labeledFieldText(doc, 'How much?');
+    const weightText = labeledFieldText(doc, 'Yarn weight');
+    const combined = combinedDensity(weightText);
     addMass(result, yardText);
+    const yarnBlocks = suggestedYarnBlocks(doc);
     if (result.hasGramData) {
       result.grams = Math.round(result.grams);
+      attachStrands(result, yarnBlocks, combined);
       return result;
     }
 
-    const weightText = labeledFieldText(doc, 'Yarn weight');
     const meters = parseYardageMeters(yardText);
-    const suggested = suggestedYarnDensity(bodyText);
-    const combined = combinedDensity(weightText);
+    const suggested = yarnBlocks.length ? yarnBlocks[0].gpm : suggestedYarnDensity(bodyText);
     const gpm =
       combined && combined.combined
         ? combined.gpm
@@ -189,6 +228,7 @@
       result.grams = Math.round(meters * gpm);
       result.hasGramData = true;
       result.estimated = true;
+      attachStrands(result, yarnBlocks, combined);
       result.note =
         'Estimated from ' +
         Math.round(meters) +
@@ -202,6 +242,52 @@
 
     result.otherData = Boolean(yardText.trim() || /\b(skeins?|balls?|hanks?)\b/i.test(bodyText));
     return result;
+  }
+
+  const CURRENCY_SYMBOLS = { EUR: '\u20ac', USD: '$', GBP: '\u00a3' };
+
+  function lookupPrice(name) {
+    return new Promise((resolve) => {
+      try {
+        if (!chrome.runtime || !chrome.runtime.sendMessage) return resolve(null);
+        chrome.runtime.sendMessage({ type: 'rgfPrice', name }, (res) => {
+          void chrome.runtime && chrome.runtime.lastError;
+          resolve(res && res.ok && res.perGram > 0 ? res : null);
+        });
+      } catch (e) {
+        resolve(null);
+      }
+    });
+  }
+
+  async function applyStoreCost(entry) {
+    if (entry.costStoreDone || entry.grams === null || !entry.suggested || !entry.suggested.length) return;
+    entry.costStoreDone = true;
+    const strands = entry.suggested.slice(0, Math.max(1, entry.strandCount || 1));
+    if (!strands.length) return;
+    const lookups = await Promise.all(strands.map((s) => lookupPrice(s.name)));
+    let sumGpm = 0;
+    let weighted = 0;
+    let storeCount = 0;
+    let symbol = null;
+    const sources = [];
+    lookups.forEach((lk, i) => {
+      const s = strands[i];
+      sumGpm += s.gpm;
+      if (lk) {
+        storeCount++;
+        weighted += s.gpm * lk.perGram;
+        if (!symbol) symbol = CURRENCY_SYMBOLS[lk.currency] || '';
+        sources.push(s.name + ' \u2192 ' + lk.title + ' (' + lk.price + ' ' + (CURRENCY_SYMBOLS[lk.currency] || lk.currency || '') + ' / ' + lk.grams + ' g)');
+      } else {
+        weighted += s.gpm * (price100 / 100);
+        sources.push(s.name + ' \u2192 manual price/100g (' + price100 + ')');
+      }
+    });
+    if (!sumGpm) return;
+    const value = Math.max(1, Math.round((entry.grams / sumGpm) * weighted));
+    entry.storeCost = { value, symbol: storeCount === lookups.length ? symbol : '$', sources };
+    updateCostChip(entry);
   }
 
   function getAmount(path) {
@@ -317,6 +403,8 @@
         if (v.hasGramData) {
           entry.grams = v.grams;
           entry.estimated = Boolean(v.estimated);
+          entry.suggested = v.suggested || null;
+          entry.strandCount = v.strandCount || 1;
           entry.unknown = false;
           entry.chip.textContent = (v.estimated ? '≈ ' : '') + v.grams + ' g';
           entry.chip.classList.remove('rgf-pending');
@@ -327,6 +415,7 @@
             entry.chip.title = 'Yarn weight in grams as recorded on the page.';
           }
           addCostChip(entry);
+          applyStoreCost(entry);
         } else if (v.error) {
           entry.chip.textContent = '? g';
           entry.chip.title = 'Could not load this page.';
@@ -363,6 +452,14 @@
 
   function updateCostChip(entry) {
     if (!entry.costChip || !document.contains(entry.costChip) || entry.grams === null) return;
+    if (entry.storeCost) {
+      entry.costChip.textContent = '≈ ' + entry.storeCost.symbol + entry.storeCost.value;
+      entry.costChip.title =
+        'Estimated yarn cost from live store prices:\n' +
+        entry.storeCost.sources.join('\n') +
+        '\nGaps fall back to the manual price/100g setting.';
+      return;
+    }
     const cost = Math.max(1, Math.round(entry.grams * price100 / 100));
     entry.costChip.textContent = '≈ $' + cost;
   }
@@ -419,6 +516,13 @@
     maxG = typeof f.maxG === 'number' ? f.maxG : null;
     hideUnknown = Boolean(f.hideUnknown);
     if (typeof f.price100 === 'number' && f.price100 > 0) price100 = f.price100;
+    for (const entry of rows.values()) {
+      if (entry.suggested && entry.suggested.length && entry.costStoreDone) {
+        entry.costStoreDone = false;
+        entry.storeCost = null;
+        applyStoreCost(entry);
+      }
+    }
     updateCostChips();
     scanSafe();
   }
@@ -432,7 +536,7 @@
       '  <label>min <input id="rgf-min" type="number" min="0" step="1" placeholder="g"></label>',
       '  <label>max <input id="rgf-max" type="number" min="0" step="1" placeholder="g"></label>',
       '</div>',
-      '<div class="rgf-controls"><label style="flex:1">price/100g $ <input id="rgf-price" type="number" min="0" step="0.5" value="10"></label></div>',
+      '<div class="rgf-controls"><label style="flex:1">price/100g (fallback) <input id="rgf-price" type="number" min="0" step="0.5" value="10"></label></div>',
       '<label class="rgf-check"><input id="rgf-hide" type="checkbox"> hide items without gram info</label>',
       '<div class="rgf-footer"><span id="rgf-status"></span><button id="rgf-clear" type="button">clear cache</button></div>'
     ].join('\n');

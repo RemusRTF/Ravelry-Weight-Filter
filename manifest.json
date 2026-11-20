@@ -1,11 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Ravelry Yarn Weight Filter",
-  "version": "1.2",
-  "description": "Shows how many grams of yarn Ravelry patterns and projects use and filters search results by yarn weight.",
+  "version": "1.3",
+  "description": "Shows how many grams of yarn Ravelry patterns and projects use, filters search results by yarn weight, and estimates yarn cost from EU store prices.",
   "permissions": [
     "storage"
   ],
+  "host_permissions": [
+    "https://hobbii.de/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "Ravelry Yarn Weight Filter"
   },
