@@ -15,6 +15,35 @@ const GRAY_ICONS = {
   128: 'icons/icon128-disabled.png'
 };
 
+const ANIM_SIZES = [16, 32, 48, 128];
+const ANIM_BASE = 'icons/anim/';
+const ANIM_MS = [55, 55, 55, 55, 80, 80, 80, 80, 80, 80, 80, 80, 80];
+
+function framePaths(i) {
+  const out = {};
+  for (const s of ANIM_SIZES) out[s] = ANIM_BASE + 'n' + String(i + 1).padStart(2, '0') + '-' + s + '.png';
+  return out;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let animPlaying = false;
+
+async function playEnableAnimation() {
+  if (animPlaying) return;
+  animPlaying = true;
+  try {
+    for (let i = 0; i < ANIM_MS.length; i++) {
+      chrome.action.setIcon({ path: framePaths(i) });
+      await sleep(ANIM_MS[i]);
+    }
+  } catch (e) {
+    /* ignore */
+  }
+  animPlaying = false;
+  applyIcon(true);
+}
+
 function iconPaths(enabled) {
   const src = enabled ? COLOR_ICONS : GRAY_ICONS;
   const out = {};
@@ -41,13 +70,15 @@ function initIcon() {
     chrome.action.onClicked.addListener(async () => {
       const cur = await chrome.storage.local.get([ENABLED_KEY]);
       const currentlyEnabled = !(cur && cur[ENABLED_KEY] === false);
-      const next = !currentlyEnabled;
-      await chrome.storage.local.set({ [ENABLED_KEY]: next });
-      applyIcon(next);
+      await chrome.storage.local.set({ [ENABLED_KEY]: !currentlyEnabled });
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes[ENABLED_KEY]) return;
-      applyIcon(changes[ENABLED_KEY].newValue !== false);
+      if (changes[ENABLED_KEY].newValue === false) {
+        applyIcon(false);
+      } else {
+        playEnableAnimation();
+      }
     });
   } catch (e) {
     /* ignore */

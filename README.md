@@ -41,7 +41,8 @@ weight**.
 
 - **Pink yarn-ball toolbar icon**: click it to toggle the extension — the icon
   turns gray and the panel/chips are removed from the page; click again to
-  re-enable. The state is remembered per browser (not per tab).
+  re-enable, whereupon the gray ball spins up and fades to pink before resting.
+  The state is remembered per browser (not per tab).
 
 ## Install (unpacked, developer mode)
 
@@ -76,4 +77,4 @@ weight**.
 | `background.js`| Service worker: Hobbii (EU) yarn price lookups        |
 | `panel.css`    | Styling for the filter panel and chips                |
 | `icons/`       | Toolbar/extension icons (yarn ball)                   |
-| `make_icon.py` | Script that generates the icons                       |
+| `make_icon.py` | Script that generates the icons + spin-up frames       |
