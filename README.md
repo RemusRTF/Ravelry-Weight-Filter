@@ -39,6 +39,10 @@ weight**.
   brand/colorways often differ) the badge falls back to the manual
   **price/100g** value in the filter panel (default $10) and shows `$`.
 
+- **Pink yarn-ball toolbar icon**: click it to toggle the extension — the icon
+  turns gray and the panel/chips are removed from the page; click again to
+  re-enable. The state is remembered per browser (not per tab).
+
 ## Install (unpacked, developer mode)
 
 1. Download / clone this folder.

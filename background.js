@@ -1,6 +1,60 @@
 'use strict';
 
 const PRICE_CACHE_KEY = 'rgfPriceCacheV1';
+const ENABLED_KEY = 'rgfEnabled';
+const COLOR_ICONS = {
+  16: 'icons/icon16.png',
+  32: 'icons/icon32.png',
+  48: 'icons/icon48.png',
+  128: 'icons/icon128.png'
+};
+const GRAY_ICONS = {
+  16: 'icons/icon16-disabled.png',
+  32: 'icons/icon32-disabled.png',
+  48: 'icons/icon48-disabled.png',
+  128: 'icons/icon128-disabled.png'
+};
+
+function iconPaths(enabled) {
+  const src = enabled ? COLOR_ICONS : GRAY_ICONS;
+  const out = {};
+  for (const k of Object.keys(src)) out[k] = src[k];
+  return out;
+}
+
+function applyIcon(enabled) {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.action) return;
+    chrome.action.setIcon({ path: iconPaths(enabled) });
+    chrome.action.setTitle({ title: 'Ravelry Yarn Weight Filter' + (enabled ? '' : ' (disabled - click to enable)') });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function initIcon() {
+  try {
+    if (typeof chrome === 'undefined' || !chrome.action || !chrome.storage) return;
+    chrome.storage.local.get([ENABLED_KEY], (d) => {
+      applyIcon(!(d && d[ENABLED_KEY] === false));
+    });
+    chrome.action.onClicked.addListener(async () => {
+      const cur = await chrome.storage.local.get([ENABLED_KEY]);
+      const currentlyEnabled = !(cur && cur[ENABLED_KEY] === false);
+      const next = !currentlyEnabled;
+      await chrome.storage.local.set({ [ENABLED_KEY]: next });
+      applyIcon(next);
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes[ENABLED_KEY]) return;
+      applyIcon(changes[ENABLED_KEY].newValue !== false);
+    });
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+initIcon();
 const PRICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const STORE_BASE = 'https://hobbii.de';
 const STORE_URL = STORE_BASE + '/search/suggest.json';

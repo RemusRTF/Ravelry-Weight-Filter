@@ -10,6 +10,7 @@
   const CACHE_KEY = 'rgfCacheV4';
   const FILTER_KEY = 'rgfFilter';
   const STATUS_KEY = 'rgfStatus';
+  const ENABLED_KEY = 'rgfEnabled';
   const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
   const PROJECT_RE = /^\/projects\/[^/]+\/([^/?#]+)\/?$/;
@@ -45,6 +46,7 @@
   let price100 = 10;
   let panel = null;
   let tabId = null;
+  let enabled = true;
 
   const rows = new Map();
   const inflight = new Map();
@@ -374,6 +376,7 @@
   }
 
   function scan() {
+    if (!enabled) return;
     for (const a of document.querySelectorAll('a[href]')) {
       if (inPanel(a)) continue;
       const href = normalize(a.getAttribute('href') || '');
@@ -619,16 +622,43 @@
     location.hash = params.toString();
   }
 
+  function disableUi() {
+    if (panel) {
+      panel.remove();
+      panel = null;
+    }
+    for (const entry of rows.values()) {
+      if (entry.chip && entry.chip.parentElement) entry.chip.remove();
+      if (entry.costChip && entry.costChip.parentElement) entry.costChip.remove();
+      if (entry.row) entry.row.style.display = '';
+    }
+    rows.clear();
+  }
+
+  function enableUi() {
+    if (isTop) {
+      buildPanel();
+      hydratePanel();
+      normalizeSearchState();
+    }
+    scanSafe();
+  }
+
+  function setEnabledInternal(v) {
+    enabled = v;
+    try {
+      if (v) enableUi();
+      else disableUi();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   function init() {
     if (!(document.body instanceof HTMLElement)) return;
     ensureTabId();
 
-    if (isTop) {
-      buildPanel();
-      normalizeSearchState();
-    }
-
-    chrome.storage.local.get([CACHE_KEY, FILTER_KEY], (data) => {
+    chrome.storage.local.get([CACHE_KEY, FILTER_KEY, ENABLED_KEY], (data) => {
       if (data && data[CACHE_KEY] && typeof data[CACHE_KEY] === 'object') {
         cache = data[CACHE_KEY];
       }
@@ -638,15 +668,26 @@
         maxG = typeof f.maxG === 'number' ? f.maxG : null;
         hideUnknown = Boolean(f.hideUnknown);
         if (typeof f.price100 === 'number' && f.price100 > 0) price100 = f.price100;
+      }
+      enabled = !(data && data[ENABLED_KEY] === false);
+
+      if (enabled && isTop) {
+        buildPanel();
         hydratePanel();
+        normalizeSearchState();
       }
       scanSafe();
     });
 
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes[FILTER_KEY]) return;
-      const f = changes[FILTER_KEY].newValue;
-      if (f) setFilter(f);
+      if (area !== 'local') return;
+      if (changes[FILTER_KEY]) {
+        const f = changes[FILTER_KEY].newValue;
+        if (f) setFilter(f);
+      }
+      if (changes[ENABLED_KEY]) {
+        setEnabledInternal(changes[ENABLED_KEY].newValue !== false);
+      }
     });
 
     const debounced = schedule(scanSafe);
@@ -656,5 +697,5 @@
 
   init();
 
-  window.__rgfDebug = { parseDefault, scan, applyFilter, rows, normalize };
+  window.__rgfDebug = { parseDefault, scan, applyFilter, rows, normalize, setEnabled: setEnabledInternal, isEnabled: () => enabled };
 })();
