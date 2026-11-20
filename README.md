@@ -12,17 +12,19 @@ weight**.
   yarn weight in grams.
 - Pages are fetched in the background with your existing Ravelry login —
   **no API keys needed**.
-- **Projects** show the exact weight in grams when the author recorded one
+- **Projects** show the exact weight in grams from the "How much?" field
   (grams, kilograms, ounces or pounds are all recognized and converted).
 - **Patterns** almost never record a gram total, so the chip shows an
   **estimate** (marked with `≈`): they *do* record yardage and yarn weight
   (fingering, DK, worsted…), and each weight class has a typical grams-per-meter
-  range. Example: 100 m of worsted ≈ 56 g. Hover a chip to see how the estimate
-  was computed — the real weight depends on the yarn you pick.
+  range. If the pattern lists a suggested yarn with `meters / grams`, that
+  ratio is used directly — e.g. 100 m of worsted ≈ 56 g. Hover a chip to see
+  how the estimate was computed — the real weight depends on the yarn you pick.
 - The floating **"Yarn grams filter" panel** (bottom-right) sets a
-  **min/max grams** range and can hide results with no gram info. The script
-  runs in every frame (`all_frames`) because Ravelry loads search results inside
-  an iframe; the panel and the chips stay in sync via `chrome.storage`.
+  **min/max grams** range and can hide results with no gram info. Chip and
+  panel run in the same frame (results are Ajax-injected into the page);
+  state stays in sync via `chrome.storage`, and the script also runs in
+  sub-frames (`all_frames`) as a safety net for other Ravelry layouts.
 - Results are cached for 14 days per page; **clear cache** to refresh. Listings
   that paginate or re-sort update automatically.
 

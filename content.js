@@ -137,15 +137,24 @@
       doc.querySelector('.packs') ||
       doc.querySelector('#yarn_used') ||
       doc.querySelector('.yarn_used');
-    const scopeText = packScope ? packScope.textContent : '';
 
-    addMass(result, scopeText || bodyText);
+    if (packScope) {
+      addMass(result, packScope.textContent);
+      if (result.hasGramData) {
+        result.grams = Math.round(result.grams);
+        return result;
+      }
+      result.otherData = /\b(yards?|meters?|skeins?|balls?|hanks?)\b|how much/i.test(packScope.textContent);
+      return result;
+    }
+
+    const yardText = labeledFieldText(doc, 'Yardage') || labeledFieldText(doc, 'How much?');
+    addMass(result, yardText);
     if (result.hasGramData) {
       result.grams = Math.round(result.grams);
       return result;
     }
 
-    const yardText = labeledFieldText(doc, 'Yardage');
     const weightText = labeledFieldText(doc, 'Yarn weight');
     const meters = parseYardageMeters(yardText);
     const density = suggestedYarnDensity(bodyText);
@@ -203,12 +212,20 @@
     return node && panel && panel.contains(node);
   }
 
+  function normalize(href) {
+    return href
+      .replace(/^https?:\/\/(www\.)?ravelry\.com/i, '')
+      .replace(/#.*$/, '')
+      .replace(/\?.*$/, '')
+      .replace(/\/$/, '');
+  }
+
   function scan() {
     for (const a of document.querySelectorAll('a[href]')) {
       if (inPanel(a)) continue;
-      const href = a.getAttribute('href') || '';
+      const href = normalize(a.getAttribute('href') || '');
       if (!PROJECT_RE.test(href) && !PATTERN_RE.test(href)) continue;
-      const path = href.replace(/[?#].*$/, '').replace(/\/$/, '');
+      const path = href;
 
       const existing = rows.get(path);
       if (existing && document.contains(existing.row)) continue;
@@ -420,4 +437,6 @@
   }
 
   init();
+
+  window.__rgfDebug = { parseDefault, scan, applyFilter, rows, normalize };
 })();
