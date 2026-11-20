@@ -99,6 +99,29 @@
   border-radius: 10px !important;
   vertical-align: middle;
   cursor: default;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.rgf-chip.rgf-badge {
+  position: absolute !important;
+  top: 4px !important;
+  right: 4px !important;
+  left: auto !important;
+  bottom: auto !important;
+  margin: 0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45) !important;
+  z-index: 50 !important;
+  pointer-events: none;
+}
+
+li:has(.rgf-chip),
+li:has(.rgf-chip) a {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  text-overflow: clip !important;
 }
 
 .rgf-chip.rgf-estimated {

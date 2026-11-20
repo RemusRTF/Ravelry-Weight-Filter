@@ -233,14 +233,30 @@
     return a.closest('div') || a.parentElement;
   }
 
-  function chipHost(row, a, path) {
-    if (row.tagName === 'TR') return a.closest('td') || row;
-    for (const li of row.querySelectorAll('li')) {
-      if (!/name/i.test(li.className)) continue;
-      const anchor = li.querySelector('a[href]');
-      if (anchor && normalize(anchor.getAttribute('href') || '') === path) return li;
+  function placeChip(chip, row, a, path) {
+    const photo =
+      row.querySelector('a[id^="photo_"]') ||
+      (typeof a.className === 'string' && /photo/i.test(a.className) ? a : row.querySelector('a[class*="photo"]'));
+    let host;
+    if (photo) {
+      const frame = photo.closest('.photo_border') || photo.closest('div') || row;
+      if (frame.style.position === '') frame.style.position = 'relative';
+      chip.classList.add('rgf-badge');
+      host = frame;
+    } else if (row.tagName === 'TR') {
+      host = a.closest('td') || row;
+    } else {
+      host = row;
+      for (const li of row.querySelectorAll('li')) {
+        if (!/name/i.test(li.className)) continue;
+        const anchor = li.querySelector('a[href]');
+        if (anchor && normalize(anchor.getAttribute('href') || '') === path) {
+          host = li;
+          break;
+        }
+      }
     }
-    return row;
+    host.appendChild(chip);
   }
 
   function scan() {
@@ -262,7 +278,7 @@
       chip.textContent = '… g';
 
       rows.set(path, { row, chip, grams: null, estimated: false, unknown: true, done: false });
-      chipHost(row, a, path).appendChild(chip);
+      placeChip(chip, row, a, path);
 
       if (rows.size > 500) break;
 
