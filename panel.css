@@ -1,0 +1,107 @@
+#rgf-panel {
+  position: fixed !important;
+  right: 16px !important;
+  bottom: 16px !important;
+  z-index: 2147483647 !important;
+  width: 240px;
+  padding: 10px 12px;
+  background: #ffffff !important;
+  color: #333333 !important;
+  border: 1px solid #c9bfae !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25) !important;
+  font: 13px/1.4 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  text-align: left;
+}
+
+#rgf-panel .rgf-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #333333 !important;
+}
+
+#rgf-panel #rgf-close {
+  border: none !important;
+  background: transparent !important;
+  color: #888888 !important;
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+#rgf-panel .rgf-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#rgf-panel .rgf-controls label {
+  flex: 1;
+  font-size: 12px;
+  color: #555555 !important;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#rgf-panel input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px !important;
+  border: 1px solid #b7b7b7 !important;
+  border-radius: 4px !important;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+#rgf-panel .rgf-check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #555555 !important;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+#rgf-panel .rgf-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #777777 !important;
+}
+
+#rgf-panel #rgf-clear {
+  border: 1px solid #c9bfae !important;
+  background: #f7f4ee !important;
+  color: #555555 !important;
+  border-radius: 4px !important;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#rgf-panel #rgf-clear:hover {
+  background: #efe9dd !important;
+}
+
+.rgf-chip {
+  display: inline-block !important;
+  margin-left: 6px !important;
+  padding: 1px 7px !important;
+  font: 600 11px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  color: #ffffff !important;
+  background: #6b8e5a !important;
+  border-radius: 10px !important;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.rgf-chip.rgf-pending {
+  background: #b9b2a4 !important;
+  color: #ffffff !important;
+}
