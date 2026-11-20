@@ -220,6 +220,29 @@
       .replace(/\/$/, '');
   }
 
+  function findRow(a, path) {
+    let el = a.parentElement;
+    while (el && el !== document.body) {
+      let same = 0;
+      for (const b of el.querySelectorAll('a[href]')) {
+        if (normalize(b.getAttribute('href') || '') === path) same++;
+      }
+      if (same >= 2) return el;
+      el = el.parentElement;
+    }
+    return a.closest('div') || a.parentElement;
+  }
+
+  function chipHost(row, a, path) {
+    if (row.tagName === 'TR') return a.closest('td') || row;
+    for (const li of row.querySelectorAll('li')) {
+      if (!/name/i.test(li.className)) continue;
+      const anchor = li.querySelector('a[href]');
+      if (anchor && normalize(anchor.getAttribute('href') || '') === path) return li;
+    }
+    return row;
+  }
+
   function scan() {
     for (const a of document.querySelectorAll('a[href]')) {
       if (inPanel(a)) continue;
@@ -230,7 +253,7 @@
       const existing = rows.get(path);
       if (existing && document.contains(existing.row)) continue;
 
-      const row = a.closest('li, tr, article') || a.closest('div') || a.parentElement;
+      const row = findRow(a, path);
       if (!row || inPanel(row)) continue;
 
       const chip = document.createElement('span');
@@ -239,7 +262,7 @@
       chip.textContent = '… g';
 
       rows.set(path, { row, chip, grams: null, estimated: false, unknown: true, done: false });
-      row.appendChild(chip);
+      chipHost(row, a, path).appendChild(chip);
 
       if (rows.size > 500) break;
 
