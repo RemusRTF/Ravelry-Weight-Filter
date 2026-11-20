@@ -58,9 +58,12 @@
     /(super\s+bulky|super\s+chunky|light\s+fingering|light\s+worsted|heavy\s+worsted|worsted|fingering|sock|sport|dk|double[ -]knit(ting)?|aran|bulky|chunky|cobweb|lace|\d[ -]ply)/g;
 
   function combinedDensity(weightText) {
+    const src = String(weightText || '');
+    const eqIdx = src.indexOf('=');
+    const strandsText = eqIdx >= 0 ? src.slice(0, eqIdx) : src;
     let t =
       ' ' +
-      String(weightText || '')
+      strandsText
         .toLowerCase()
         .replace(ALL_WEIGHT_NAMES_RE, (m) => ' ' + m + ' ') +
       ' ';
@@ -74,7 +77,9 @@
         t = t.split(m[0]).join(' ');
       }
     }
-    return names.length ? { gpm, names } : null;
+    return names.length
+      ? { gpm, names, combined: names.length >= 2 }
+      : null;
   }
 
   function addMass(result, text) {
@@ -171,7 +176,14 @@
     const meters = parseYardageMeters(yardText);
     const suggested = suggestedYarnDensity(bodyText);
     const combined = combinedDensity(weightText);
-    const gpm = suggested !== null ? suggested : combined ? combined.gpm : null;
+    const gpm =
+      combined && combined.combined
+        ? combined.gpm
+        : suggested !== null
+          ? suggested
+          : combined
+            ? combined.gpm
+            : null;
 
     if (meters && gpm) {
       result.grams = Math.round(meters * gpm);
