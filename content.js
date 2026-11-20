@@ -15,17 +15,20 @@
   const PROJECT_RE = /^\/projects\/[^/]+\/([^/?#]+)\/?$/;
   const PATTERN_RE = /^\/patterns\/library\/([^/?#]+)\/?$/;
 
+  const PAGE_SIZE = 25;
+
   const WEIGHT_M_PER_100G = [
-    [/super\s+bulky|super\s+chunky/, 60],
-    [/light\s+fingering/, 450],
-    [/light\s+worsted/, 220],
-    [/\bbulky\b|\bchunky\b/, 100],
-    [/\baran\b|heavy\s+worsted/, 150],
-    [/\bworsted\b/, 180],
-    [/\bdk\b|double[ -]knit(ting)?/, 220],
-    [/\bsport\b|\b5[ -]ply\b/, 300],
-    [/\bfingering\b|\bsock\b|\b4[ -]ply\b|\b3[ -]ply\b/, 370],
-    [/\blace\b|2[ -]ply|1[ -]ply/, 600]
+    [/super\s+bulky|super\s+chunky/, 60, 'super bulky'],
+    [/light\s+fingering/, 450, 'light fingering'],
+    [/light\s+worsted/, 220, 'light worsted'],
+    [/heavy\s+worsted/, 150, 'heavy worsted'],
+    [/\bbulky\b|\bchunky\b/, 100, 'bulky'],
+    [/\baran\b/, 150, 'aran'],
+    [/\bworsted\b/, 180, 'worsted'],
+    [/\bdk\b|double[ -]knit(ting)?/, 220, 'dk'],
+    [/\bsport\b|\b5[ -]ply\b/, 300, 'sport'],
+    [/\bfingering\b|\bsock\b|\b4[ -]ply\b|\b3[ -]ply\b/, 370, 'fingering'],
+    [/\blace\b|\bcobweb\b|\b2[ -]ply\b|\b1[ -]ply\b/, 600, 'lace']
   ];
 
   let isTop = true;
@@ -39,6 +42,7 @@
   let minG = null;
   let maxG = null;
   let hideUnknown = false;
+  let price100 = 10;
   let panel = null;
   let tabId = null;
 
@@ -50,19 +54,27 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function gramsPerMeter(weightText) {
-    const t = (weightText || '').toLowerCase();
-    for (const [re, mPer100g] of WEIGHT_M_PER_100G) {
-      if (re.test(t)) return 100 / mPer100g;
-    }
-    return null;
-  }
+  const ALL_WEIGHT_NAMES_RE =
+    /(super\s+bulky|super\s+chunky|light\s+fingering|light\s+worsted|heavy\s+worsted|worsted|fingering|sock|sport|dk|double[ -]knit(ting)?|aran|bulky|chunky|cobweb|lace|\d[ -]ply)/g;
 
-  function weightLabel(weightText) {
-    const m = /\b(lace|light\s+fingering|fingering|sock|sport|dk|double[ -]knit(ting)?|light\s+worsted|worsted|heavy\s+worsted|aran|bulky|chunky|super\s+bulky|super\s+chunky)/i.exec(
-      weightText || ''
-    );
-    return m ? m[1] : 'unknown weight';
+  function combinedDensity(weightText) {
+    let t =
+      ' ' +
+      String(weightText || '')
+        .toLowerCase()
+        .replace(ALL_WEIGHT_NAMES_RE, (m) => ' ' + m + ' ') +
+      ' ';
+    let gpm = 0;
+    const names = [];
+    for (const [re, mPer100g, name] of WEIGHT_M_PER_100G) {
+      const m = re.exec(t);
+      if (m) {
+        gpm += 100 / mPer100g;
+        names.push(name);
+        t = t.split(m[0]).join(' ');
+      }
+    }
+    return names.length ? { gpm, names } : null;
   }
 
   function addMass(result, text) {
@@ -157,8 +169,9 @@
 
     const weightText = labeledFieldText(doc, 'Yarn weight');
     const meters = parseYardageMeters(yardText);
-    const density = suggestedYarnDensity(bodyText);
-    const gpm = density !== null ? density : gramsPerMeter(weightText);
+    const suggested = suggestedYarnDensity(bodyText);
+    const combined = combinedDensity(weightText);
+    const gpm = suggested !== null ? suggested : combined ? combined.gpm : null;
 
     if (meters && gpm) {
       result.grams = Math.round(meters * gpm);
@@ -167,9 +180,9 @@
       result.note =
         'Estimated from ' +
         Math.round(meters) +
-        ' m of ' +
-        weightLabel(weightText) +
-        ' yarn (~' +
+        ' m of yarn (' +
+        (combined ? combined.names.join(' + ') : 'single weight') +
+        ' ≈ ' +
         gpm.toFixed(2) +
         ' g/m). The exact weight depends on the yarn you choose.';
       return result;
@@ -233,7 +246,8 @@
     return a.closest('div') || a.parentElement;
   }
 
-  function placeChip(chip, row, a, path) {
+  function placeChip(chip, entry, a, path) {
+    const row = entry.row;
     const photo =
       row.querySelector('a[id^="photo_"]') ||
       (typeof a.className === 'string' && /photo/i.test(a.className) ? a : row.querySelector('a[class*="photo"]'));
@@ -242,6 +256,7 @@
       const frame = photo.closest('.photo_border') || photo.closest('div') || row;
       if (frame.style.position === '') frame.style.position = 'relative';
       chip.classList.add('rgf-badge');
+      entry.badge = true;
       host = frame;
     } else if (row.tagName === 'TR') {
       host = a.closest('td') || row;
@@ -257,6 +272,7 @@
       }
     }
     host.appendChild(chip);
+    entry.host = host;
   }
 
   function scan() {
@@ -277,8 +293,8 @@
       chip.title = 'Yarn amount for this item (Ravelry Yarn Weight Filter)';
       chip.textContent = '… g';
 
-      rows.set(path, { row, chip, grams: null, estimated: false, unknown: true, done: false });
-      placeChip(chip, row, a, path);
+      rows.set(path, { row, chip, grams: null, estimated: false, unknown: true, done: false, host: null, badge: false, costChip: null });
+      placeChip(chip, rows.get(path), a, path);
 
       if (rows.size > 500) break;
 
@@ -298,6 +314,7 @@
           } else {
             entry.chip.title = 'Yarn weight in grams as recorded on the page.';
           }
+          addCostChip(entry);
         } else if (v.error) {
           entry.chip.textContent = '? g';
           entry.chip.title = 'Could not load this page.';
@@ -311,6 +328,31 @@
         applyFilter();
       });
     }
+  }
+
+  function addCostChip(entry) {
+    if (entry.costChip || !entry.host || !document.contains(entry.host)) return;
+    const c = document.createElement('span');
+    c.className = 'rgf-chip rgf-cost' + (entry.badge ? ' rgf-badge' : '');
+    c.title =
+      'Estimated yarn cost = weight × $' +
+      Number(price100).toFixed(2) +
+      ' per 100 g. Change "price/100g" in the filter panel to match your currency/yarn prices.';
+    entry.costChip = c;
+    entry.host.appendChild(c);
+    updateCostChip(entry);
+  }
+
+  function updateCostChips() {
+    for (const entry of rows.values()) {
+      updateCostChip(entry);
+    }
+  }
+
+  function updateCostChip(entry) {
+    if (!entry.costChip || !document.contains(entry.costChip) || entry.grams === null) return;
+    const cost = Math.max(1, Math.round(entry.grams * price100 / 100));
+    entry.costChip.textContent = '≈ $' + cost;
   }
 
   function applyFilter() {
@@ -356,6 +398,7 @@
     if (!panel) return;
     panel.querySelector('#rgf-min').value = minG === null ? '' : minG;
     panel.querySelector('#rgf-max').value = maxG === null ? '' : maxG;
+    panel.querySelector('#rgf-price').value = price100;
     panel.querySelector('#rgf-hide').checked = hideUnknown;
   }
 
@@ -363,6 +406,8 @@
     minG = typeof f.minG === 'number' ? f.minG : null;
     maxG = typeof f.maxG === 'number' ? f.maxG : null;
     hideUnknown = Boolean(f.hideUnknown);
+    if (typeof f.price100 === 'number' && f.price100 > 0) price100 = f.price100;
+    updateCostChips();
     scanSafe();
   }
 
@@ -375,6 +420,7 @@
       '  <label>min <input id="rgf-min" type="number" min="0" step="1" placeholder="g"></label>',
       '  <label>max <input id="rgf-max" type="number" min="0" step="1" placeholder="g"></label>',
       '</div>',
+      '<div class="rgf-controls"><label style="flex:1">price/100g $ <input id="rgf-price" type="number" min="0" step="0.5" value="10"></label></div>',
       '<label class="rgf-check"><input id="rgf-hide" type="checkbox"> hide items without gram info</label>',
       '<div class="rgf-footer"><span id="rgf-status"></span><button id="rgf-clear" type="button">clear cache</button></div>'
     ].join('\n');
@@ -385,6 +431,7 @@
         [FILTER_KEY]: {
           minG: parseNumber(panel.querySelector('#rgf-min').value),
           maxG: parseNumber(panel.querySelector('#rgf-max').value),
+          price100: parseNumber(panel.querySelector('#rgf-price').value),
           hideUnknown: panel.querySelector('#rgf-hide').checked,
           rev: Date.now()
         }
@@ -393,6 +440,7 @@
 
     panel.querySelector('#rgf-min').addEventListener('input', pushFilter);
     panel.querySelector('#rgf-max').addEventListener('input', pushFilter);
+    panel.querySelector('#rgf-price').addEventListener('input', pushFilter);
     panel.querySelector('#rgf-hide').addEventListener('change', pushFilter);
 
     panel.querySelector('#rgf-clear').addEventListener('click', () => {
@@ -444,11 +492,25 @@
     };
   }
 
+  function normalizeSearchState() {
+    if (!isTop) return;
+    if (!/^\/(patterns|projects)\/search\/?$/.test(location.pathname)) return;
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw.trim()) return;
+    const params = new URLSearchParams(raw);
+    if (params.get('page_size') === String(PAGE_SIZE)) return;
+    params.set('page_size', String(PAGE_SIZE));
+    location.hash = params.toString();
+  }
+
   function init() {
     if (!(document.body instanceof HTMLElement)) return;
     ensureTabId();
 
-    if (isTop) buildPanel();
+    if (isTop) {
+      buildPanel();
+      normalizeSearchState();
+    }
 
     chrome.storage.local.get([CACHE_KEY, FILTER_KEY], (data) => {
       if (data && data[CACHE_KEY] && typeof data[CACHE_KEY] === 'object') {
@@ -459,6 +521,7 @@
         minG = typeof f.minG === 'number' ? f.minG : null;
         maxG = typeof f.maxG === 'number' ? f.maxG : null;
         hideUnknown = Boolean(f.hideUnknown);
+        if (typeof f.price100 === 'number' && f.price100 > 0) price100 = f.price100;
         hydratePanel();
       }
       scanSafe();

@@ -128,7 +128,15 @@ li:has(.rgf-chip) a {
   background: #c98a4b !important;
 }
 
-.rgf-chip.rgf-pending {
+.rgf-chip.rgf-cost {
+  background: #3d9c4f !important;
+}
+
+.rgf-chip.rgf-cost.rgf-badge {
+  top: 25px !important;
+}
+
+rgf-chip.rgf-pending {
   background: #b9b2a4 !important;
   color: #ffffff !important;
 }

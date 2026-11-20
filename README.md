@@ -18,8 +18,9 @@ weight**.
   **estimate** (marked with `≈`): they *do* record yardage and yarn weight
   (fingering, DK, worsted…), and each weight class has a typical grams-per-meter
   range. If the pattern lists a suggested yarn with `meters / grams`, that
-  ratio is used directly — e.g. 100 m of worsted ≈ 56 g. Hover a chip to see
-  how the estimate was computed — the real weight depends on the yarn you pick.
+  ratio is used directly. **Combined yarns are handled**: multiple weights in
+  the "Yarn weight" field (e.g. `Worsted + Lace`) are summed — worsted + lace
+  ≈ aran-weight density. Hover a chip to see how the estimate was computed.
 - The floating **"Yarn grams filter" panel** (bottom-right) sets a
   **min/max grams** range and can hide results with no gram info. Chip and
   panel run in the same frame (results are Ajax-injected into the page);
@@ -27,6 +28,11 @@ weight**.
   sub-frames (`all_frames`) as a safety net for other Ravelry layouts.
 - Results are cached for 14 days per page; **clear cache** to refresh. Listings
   that paginate or re-sort update automatically.
+- Search pages are normalized to **25 results per page** (added to the search
+  hash when missing or smaller, so page counts stay consistent).
+- Every result also gets a **green cost badge** (`≈ $12`): estimated yarn cost =
+  grams × the **price/100g** value in the filter panel (default $10, in the
+  currency you think in — it's a rough shopping guide, not a quote).
 
 ## Install (unpacked, developer mode)
 
