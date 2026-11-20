@@ -1,12 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "Ravelry Gram Filter",
-  "version": "1.0.0",
-  "description": "Shows how many grams of yarn each Ravelry project used and lets you filter project search results by yarn weight.",
+  "name": "Ravelry Yarn Weight Filter",
+  "version": "1.1.0",
+  "description": "Shows how many grams of yarn Ravelry patterns and projects use and filters search results by yarn weight.",
   "permissions": ["storage"],
+  "action": {
+    "default_title": "Ravelry Yarn Weight Filter"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.ravelry.com/projects/*"],
+      "matches": ["https://www.ravelry.com/patterns/*", "https://www.ravelry.com/projects/*"],
       "js": ["content.js"],
       "css": ["panel.css"],
       "run_at": "document_idle"

@@ -6,10 +6,25 @@
 
   const GRAMS_PER_OUNCE = 28.349523125;
   const GRAMS_PER_POUND = 453.59237;
-  const CACHE_KEY = 'rgfCacheV1';
+  const METERS_PER_YARD = 0.9144;
+  const CACHE_KEY = 'rgfCacheV2';
   const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
   const PROJECT_RE = /^\/projects\/([^/]+)\/([^/?#]+)\/?$/;
+  const PATTERN_RE = /^\/patterns\/library\/([^/?#]+)\/?$/;
+
+  const WEIGHT_M_PER_100G = [
+    [/super\s+bulky|super\s+chunky/, 60],
+    [/light\s+fingering/, 450],
+    [/light\s+worsted/, 220],
+    [/\bbulky\b|\bchunky\b/, 100],
+    [/\baran\b|heavy\s+worsted/, 150],
+    [/\bworsted\b/, 180],
+    [/\bdk\b|double[ -]knit(ting)?/, 220],
+    [/\bsport\b|\b5[ -]ply\b/, 300],
+    [/\bfingering\b|\bsock\b|\b4[ -]ply\b|\b3[ -]ply\b/, 370],
+    [/\blace\b|2[ -]ply|1[ -]ply/, 600]
+  ];
 
   let cache = Object.create(null);
   let minG = null;
@@ -25,10 +40,56 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function parseGrams(html) {
+  function gramsPerMeter(weightText) {
+    const t = (weightText || '').toLowerCase();
+    for (const [re, mPer100g] of WEIGHT_M_PER_100G) {
+      if (re.test(t)) return 100 / mPer100g;
+    }
+    return null;
+  }
+
+  function weightLabel(weightText) {
+    const m = /\b(lace|light\s+fingering|fingering|sock|sport|dk|double[ -]knit(ting)?|light\s+worsted|worsted|heavy\s+worsted|aran|bulky|chunky|super\s+bulky|super\s+chunky)/i.exec(
+      weightText || ''
+    );
+    return m ? m[1] : 'unknown weight';
+  }
+
+  function addMass(result, text) {
+    const units = [
+      { re: /(\d[\d.,]*)\s*(?:kilograms?|kgs?\.?|kg)\b/gi, factor: 1000 },
+      { re: /(\d[\d.,]*)\s*(?:pounds?|lbs?\.?|lb)\b/gi, factor: GRAMS_PER_POUND },
+      { re: /(\d[\d.,]*)\s*(?:ounces?|oz\.?|oz)\b/gi, factor: GRAMS_PER_OUNCE },
+      { re: /(\d[\d.,]*)\s*(?:grams?|g)\b/gi, factor: 1 }
+    ];
+    let matched = false;
+    for (const { re, factor } of units) {
+      for (const m of text.matchAll(re)) {
+        const n = parseNumber(m[1]);
+        if (n !== null) {
+          result.grams = (result.grams || 0) + n * factor;
+          matched = true;
+        }
+      }
+    }
+    if (matched) {
+      result.hasGramData = true;
+      result.estimated = false;
+    }
+  }
+
+  function scopeOrLabeledText(doc, selectors, labelRe) {
+    for (const sel of selectors) {
+      const el = doc.querySelector(sel);
+      if (el && el.textContent.trim()) return el.textContent;
+    }
+    const m = labelRe.exec(doc.body ? doc.body.textContent : '');
+    return m ? m[0] : '';
+  }
+
+  function parseProject(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('script, style, noscript, template').forEach((el) => el.remove());
-
     const packScope =
       doc.querySelector('#packs') ||
       doc.querySelector('.packs') ||
@@ -36,46 +97,65 @@
       doc.querySelector('.yarn_used');
     const text = (packScope || doc.body).textContent || '';
 
-    const result = { grams: null, hasGramData: false, hasOtherData: false, error: false };
-
-    let total = 0;
-    let matched = false;
-
-    const units = [
-      { re: /(\d[\d.,]*)\s*(?:kilograms?|kgs?\.?|kg)\b/gi, factor: 1000 },
-      { re: /(\d[\d.,]*)\s*(?:pounds?|lbs?\.?|lb)\b/gi, factor: GRAMS_PER_POUND },
-      { re: /(\d[\d.,]*)\s*(?:ounces?|oz\.?|oz)\b/gi, factor: GRAMS_PER_OUNCE },
-      { re: /(\d[\d.,]*)\s*(?:grams?|g)\b/gi, factor: 1 }
-    ];
-
-    for (const { re, factor } of units) {
-      for (const m of text.matchAll(re)) {
-        const n = parseNumber(m[1]);
-        if (n !== null) {
-          total += n * factor;
-          matched = true;
-        }
-      }
-    }
-
-    if (matched) {
-      result.grams = Math.round(total);
-      result.hasGramData = true;
-    }
-
-    result.hasOtherData = /\b(yards?|meters?|skeins?|balls?|hanks?)\b|how much/i.test(text);
+    const result = { grams: null, hasGramData: false, estimated: false, otherData: false, error: false };
+    addMass(result, text);
+    result.otherData = /\b(yards?|meters?|skeins?|balls?|hanks?)\b|how much/i.test(text);
+    if (result.hasGramData) result.grams = Math.round(result.grams);
     return result;
   }
 
-  function getGrams(path) {
+  function parsePattern(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script, style, noscript, template').forEach((el) => el.remove());
+
+    const result = { grams: null, hasGramData: false, estimated: false, otherData: false, error: false };
+
+    const yardText = scopeOrLabeledText(
+      doc,
+      ['#yardage', '.yardage'],
+      /\byardage\b[\s\S]{0,140}/i
+    );
+    const weightText = scopeOrLabeledText(
+      doc,
+      ['#yarn_weight', '.yarn_weight'],
+      /yarn weight[\s\S]{0,80}/i
+    );
+
+    addMass(result, yardText);
+    if (result.hasGramData) {
+      result.grams = Math.round(result.grams);
+      return result;
+    }
+
+    const mPer = /([\d.,]+)\s*(meters?|m)\b/i.exec(yardText);
+    const yPer = /([\d.,]+)\s*(yards?|yds?)\b/i.exec(yardText);
+    let meters = mPer ? parseNumber(mPer[1]) : yPer ? parseNumber(yPer[1]) * METERS_PER_YARD : null;
+
+    const gpm = gramsPerMeter(weightText);
+    if (meters && meters > 0 && gpm) {
+      result.grams = Math.round(meters * gpm);
+      result.hasGramData = true;
+      result.estimated = true;
+      result.note =
+        'Estimated from ' +
+        Math.round(meters) +
+        ' m of ' +
+        weightLabel(weightText) +
+        ' yarn (~' +
+        gpm.toFixed(2) +
+        ' g/m). Actual weight depends on the yarn you choose.';
+      return result;
+    }
+
+    result.otherData = Boolean(yPer || /\b(skeins?|balls?|hanks?|yards?|meters?)\b/i.test(yardText));
+    return result;
+  }
+
+  function getAmount(path) {
     const now = Date.now();
     const hit = cache[path];
     if (hit && now - hit.t < CACHE_TTL_MS) {
-      return Promise.resolve(
-        hit.v === -1
-          ? { grams: null, hasGramData: false, hasOtherData: true, error: true }
-          : hit.v
-      );
+      return Promise.resolve(hit.v === -1 ? { grams: null, hasGramData: false, otherData: true, error: true } : hit.v);
     }
     if (inflight.has(path)) return inflight.get(path);
 
@@ -85,7 +165,7 @@
         return r.text();
       })
       .then((html) => {
-        const v = parseGrams(html);
+        const v = PROJECT_RE.test(path) ? parseProject(html) : parsePattern(html);
         cache[path] = { t: now, v };
         chrome.storage.local.set({ [CACHE_KEY]: cache });
         return v;
@@ -93,7 +173,7 @@
       .catch(() => {
         cache[path] = { t: now, v: -1 };
         chrome.storage.local.set({ [CACHE_KEY]: cache });
-        return { grams: null, hasGramData: false, hasOtherData: true, error: true };
+        return { grams: null, hasGramData: false, otherData: true, error: true };
       });
 
     inflight.set(path, p);
@@ -108,10 +188,13 @@
     for (const a of document.querySelectorAll('a[href]')) {
       if (inPanel(a)) continue;
       const href = a.getAttribute('href') || '';
-      const m = PROJECT_RE.exec(href);
-      if (!m) continue;
+      const path = PROJECT_RE.test(href)
+        ? href.replace(/[?#].*$/, '').replace(/\/$/, '')
+        : PATTERN_RE.test(href)
+          ? href.replace(/[?#].*$/, '').replace(/\/$/, '')
+          : null;
+      if (!path) continue;
 
-      const path = '/projects/' + m[1] + '/' + m[2];
       const existing = rows.get(path);
       if (existing && document.contains(existing.row)) continue;
 
@@ -120,33 +203,39 @@
 
       const chip = document.createElement('span');
       chip.className = 'rgf-chip rgf-pending';
-      chip.title = 'Yarn amount used by this project (Ravelry Gram Filter)';
+      chip.title = 'Yarn amount for this item (Ravelry Yarn Weight Filter)';
       chip.textContent = '… g';
 
-      rows.set(path, { row, chip, grams: null, unknown: true, done: false });
+      rows.set(path, { row, chip, grams: null, estimated: false, unknown: true, done: false });
       row.appendChild(chip);
 
       if (rows.size > 500) break;
 
-      getGrams(path).then((v) => {
+      getAmount(path).then((v) => {
         const entry = rows.get(path);
         if (!entry || !document.contains(entry.chip)) return;
         entry.done = true;
         if (v.hasGramData) {
           entry.grams = v.grams;
+          entry.estimated = Boolean(v.estimated);
           entry.unknown = false;
-          entry.chip.textContent = v.grams + ' g';
+          entry.chip.textContent = (v.estimated ? '≈ ' : '') + v.grams + ' g';
           entry.chip.classList.remove('rgf-pending');
+          if (v.estimated) {
+            entry.chip.classList.add('rgf-estimated');
+            entry.chip.title = v.note || 'Estimated from yardage and yarn weight.';
+          } else {
+            entry.chip.title = 'Yarn weight in grams as recorded on the page.';
+          }
         } else if (v.error) {
           entry.chip.textContent = '? g';
-          entry.chip.title = 'Could not load this project page.';
-        } else if (v.hasOtherData) {
+          entry.chip.title = 'Could not load this page.';
+        } else if (v.otherData) {
           entry.chip.textContent = 'no g';
-          entry.chip.title = 'This project records yardage/skeins but not a yarn weight in grams.';
-
+          entry.chip.title = 'This page records a yarn amount in other units (yardage/skeins) without enough info to estimate grams.';
         } else {
           entry.chip.textContent = 'no g';
-          entry.chip.title = 'No yarn amount recorded on this project page.';
+          entry.chip.title = 'No yarn amount recorded.';
         }
         applyFilter();
       });
@@ -195,7 +284,7 @@
       '  <label>min <input id="rgf-min" type="number" min="0" step="1" placeholder="g"></label>',
       '  <label>max <input id="rgf-max" type="number" min="0" step="1" placeholder="g"></label>',
       '</div>',
-      '<label class="rgf-check"><input id="rgf-hide" type="checkbox"> hide projects without gram info</label>',
+      '<label class="rgf-check"><input id="rgf-hide" type="checkbox"> hide items without gram info</label>',
       '<div class="rgf-footer"><span id="rgf-status"></span><button id="rgf-clear" type="button">clear cache</button></div>'
     ].join('\n');
     document.body.appendChild(panel);
