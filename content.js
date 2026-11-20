@@ -7,10 +7,12 @@
   const GRAMS_PER_OUNCE = 28.349523125;
   const GRAMS_PER_POUND = 453.59237;
   const METERS_PER_YARD = 0.9144;
-  const CACHE_KEY = 'rgfCacheV2';
+  const CACHE_KEY = 'rgfCacheV3';
+  const FILTER_KEY = 'rgfFilter';
+  const STATUS_KEY = 'rgfStatus';
   const CACHE_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 
-  const PROJECT_RE = /^\/projects\/([^/]+)\/([^/?#]+)\/?$/;
+  const PROJECT_RE = /^\/projects\/[^/]+\/([^/?#]+)\/?$/;
   const PATTERN_RE = /^\/patterns\/library\/([^/?#]+)\/?$/;
 
   const WEIGHT_M_PER_100G = [
@@ -26,11 +28,19 @@
     [/\blace\b|2[ -]ply|1[ -]ply/, 600]
   ];
 
+  let isTop = true;
+  try {
+    isTop = window.self === window.top;
+  } catch (e) {
+    isTop = false;
+  }
+
   let cache = Object.create(null);
   let minG = null;
   let maxG = null;
   let hideUnknown = false;
   let panel = null;
+  let tabId = null;
 
   const rows = new Map();
   const inflight = new Map();
@@ -78,61 +88,70 @@
     }
   }
 
-  function scopeOrLabeledText(doc, selectors, labelRe) {
-    for (const sel of selectors) {
-      const el = doc.querySelector(sel);
-      if (el && el.textContent.trim()) return el.textContent;
+  function labeledFieldText(doc, label) {
+    const wanted = label.toLowerCase();
+    for (const el of doc.querySelectorAll('h5, h4, h3, label, .fact_label, .label, dt, span')) {
+      if (el.children.length === 0 && el.textContent.trim().toLowerCase() === wanted) {
+        if (el.parentElement) return el.parentElement.textContent;
+      }
     }
-    const m = labelRe.exec(doc.body ? doc.body.textContent : '');
-    return m ? m[0] : '';
+    return '';
   }
 
-  function parseProject(html) {
+  function parseYardageMeters(yardText) {
+    const mRange = /([\d.,]+)\s*(?:-|–|to)?\s*([\d.,]+)?\s*(?:meters?|m)\b/i.exec(yardText);
+    const yRange = /([\d.,]+)\s*(?:-|–|to)?\s*([\d.,]+)?\s*(?:yards?|yds?)\b/i.exec(yardText);
+    if (mRange) {
+      const a = parseNumber(mRange[1]);
+      const b = mRange[2] ? parseNumber(mRange[2]) : null;
+      const meters = b !== null && b >= a ? (a + b) / 2 : a;
+      return meters > 0 ? meters : null;
+    }
+    if (yRange) {
+      const a = parseNumber(yRange[1]);
+      const b = yRange[2] ? parseNumber(yRange[2]) : null;
+      const yards = b !== null && b >= a ? (a + b) / 2 : a;
+      return yards > 0 ? yards * METERS_PER_YARD : null;
+    }
+    return null;
+  }
+
+  function suggestedYarnDensity(bodyText) {
+    const m = /([\d.,]+)\s*(?:meters?|m)\s*\/\s*([\d.,]+)\s*(?:grams?|g)\b/i.exec(bodyText);
+    if (!m) return null;
+    const meters = parseNumber(m[1]);
+    const grams = parseNumber(m[2]);
+    if (!meters || !grams || meters <= 0) return null;
+    return grams / meters;
+  }
+
+  function parseDefault(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     doc.querySelectorAll('script, style, noscript, template').forEach((el) => el.remove());
+    const bodyText = doc.body ? doc.body.textContent : '';
+
+    const result = { grams: null, hasGramData: false, estimated: false, otherData: false, error: false };
+
     const packScope =
       doc.querySelector('#packs') ||
       doc.querySelector('.packs') ||
       doc.querySelector('#yarn_used') ||
       doc.querySelector('.yarn_used');
-    const text = (packScope || doc.body).textContent || '';
+    const scopeText = packScope ? packScope.textContent : '';
 
-    const result = { grams: null, hasGramData: false, estimated: false, otherData: false, error: false };
-    addMass(result, text);
-    result.otherData = /\b(yards?|meters?|skeins?|balls?|hanks?)\b|how much/i.test(text);
-    if (result.hasGramData) result.grams = Math.round(result.grams);
-    return result;
-  }
-
-  function parsePattern(html) {
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    doc.querySelectorAll('script, style, noscript, template').forEach((el) => el.remove());
-
-    const result = { grams: null, hasGramData: false, estimated: false, otherData: false, error: false };
-
-    const yardText = scopeOrLabeledText(
-      doc,
-      ['#yardage', '.yardage'],
-      /\byardage\b[\s\S]{0,140}/i
-    );
-    const weightText = scopeOrLabeledText(
-      doc,
-      ['#yarn_weight', '.yarn_weight'],
-      /yarn weight[\s\S]{0,80}/i
-    );
-
-    addMass(result, yardText);
+    addMass(result, scopeText || bodyText);
     if (result.hasGramData) {
       result.grams = Math.round(result.grams);
       return result;
     }
 
-    const mPer = /([\d.,]+)\s*(meters?|m)\b/i.exec(yardText);
-    const yPer = /([\d.,]+)\s*(yards?|yds?)\b/i.exec(yardText);
-    let meters = mPer ? parseNumber(mPer[1]) : yPer ? parseNumber(yPer[1]) * METERS_PER_YARD : null;
+    const yardText = labeledFieldText(doc, 'Yardage');
+    const weightText = labeledFieldText(doc, 'Yarn weight');
+    const meters = parseYardageMeters(yardText);
+    const density = suggestedYarnDensity(bodyText);
+    const gpm = density !== null ? density : gramsPerMeter(weightText);
 
-    const gpm = gramsPerMeter(weightText);
-    if (meters && meters > 0 && gpm) {
+    if (meters && gpm) {
       result.grams = Math.round(meters * gpm);
       result.hasGramData = true;
       result.estimated = true;
@@ -143,11 +162,11 @@
         weightLabel(weightText) +
         ' yarn (~' +
         gpm.toFixed(2) +
-        ' g/m). Actual weight depends on the yarn you choose.';
+        ' g/m). The exact weight depends on the yarn you choose.';
       return result;
     }
 
-    result.otherData = Boolean(yPer || /\b(skeins?|balls?|hanks?|yards?|meters?)\b/i.test(yardText));
+    result.otherData = Boolean(yardText.trim() || /\b(skeins?|balls?|hanks?)\b/i.test(bodyText));
     return result;
   }
 
@@ -164,8 +183,8 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.text();
       })
-      .then((html) => {
-        const v = PROJECT_RE.test(path) ? parseProject(html) : parsePattern(html);
+      .then((html) => parseDefault(html))
+      .then((v) => {
         cache[path] = { t: now, v };
         chrome.storage.local.set({ [CACHE_KEY]: cache });
         return v;
@@ -188,12 +207,8 @@
     for (const a of document.querySelectorAll('a[href]')) {
       if (inPanel(a)) continue;
       const href = a.getAttribute('href') || '';
-      const path = PROJECT_RE.test(href)
-        ? href.replace(/[?#].*$/, '').replace(/\/$/, '')
-        : PATTERN_RE.test(href)
-          ? href.replace(/[?#].*$/, '').replace(/\/$/, '')
-          : null;
-      if (!path) continue;
+      if (!PROJECT_RE.test(href) && !PATTERN_RE.test(href)) continue;
+      const path = href.replace(/[?#].*$/, '').replace(/\/$/, '');
 
       const existing = rows.get(path);
       if (existing && document.contains(existing.row)) continue;
@@ -266,13 +281,33 @@
       }
       if (ok) shown++;
     }
-    updateStatus(shown, resolved);
+    publishStatus(shown, resolved);
   }
 
-  function updateStatus(shown, resolved) {
+  function publishStatus(shown, resolved) {
+    if (panel) updateStatusText(shown, resolved);
+    if (!rows.size || !tabId) return;
+    chrome.storage.local.set({ [STATUS_KEY]: { tabId, shown, resolved, ts: Date.now() } });
+  }
+
+  function updateStatusText(shown, resolved) {
     if (!panel) return;
     const statusEl = panel.querySelector('#rgf-status');
     if (statusEl) statusEl.textContent = shown + ' shown · ' + resolved + ' with grams';
+  }
+
+  function hydratePanel() {
+    if (!panel) return;
+    panel.querySelector('#rgf-min').value = minG === null ? '' : minG;
+    panel.querySelector('#rgf-max').value = maxG === null ? '' : maxG;
+    panel.querySelector('#rgf-hide').checked = hideUnknown;
+  }
+
+  function setFilter(f) {
+    minG = typeof f.minG === 'number' ? f.minG : null;
+    maxG = typeof f.maxG === 'number' ? f.maxG : null;
+    hideUnknown = Boolean(f.hideUnknown);
+    scanSafe();
   }
 
   function buildPanel() {
@@ -289,26 +324,51 @@
     ].join('\n');
     document.body.appendChild(panel);
 
-    panel.querySelector('#rgf-min').addEventListener('input', (e) => {
-      minG = parseNumber(e.target.value);
-      applyFilter();
-    });
-    panel.querySelector('#rgf-max').addEventListener('input', (e) => {
-      maxG = parseNumber(e.target.value);
-      applyFilter();
-    });
-    panel.querySelector('#rgf-hide').addEventListener('change', (e) => {
-      hideUnknown = e.target.checked;
-      applyFilter();
-    });
+    const pushFilter = () => {
+      chrome.storage.local.set({
+        [FILTER_KEY]: {
+          minG: parseNumber(panel.querySelector('#rgf-min').value),
+          maxG: parseNumber(panel.querySelector('#rgf-max').value),
+          hideUnknown: panel.querySelector('#rgf-hide').checked,
+          rev: Date.now()
+        }
+      });
+    };
+
+    panel.querySelector('#rgf-min').addEventListener('input', pushFilter);
+    panel.querySelector('#rgf-max').addEventListener('input', pushFilter);
+    panel.querySelector('#rgf-hide').addEventListener('change', pushFilter);
+
     panel.querySelector('#rgf-clear').addEventListener('click', () => {
-      cache = Object.create(null);
-      chrome.storage.local.remove(CACHE_KEY, () => location.reload());
+      chrome.storage.local.remove([CACHE_KEY, FILTER_KEY, STATUS_KEY], () => location.reload());
     });
+
     panel.querySelector('#rgf-close').addEventListener('click', () => {
       panel.remove();
       panel = null;
     });
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      if (changes[STATUS_KEY]) {
+        const s = changes[STATUS_KEY].newValue;
+        if (s && tabId && s.tabId === tabId && Date.now() - s.ts < 5000) {
+          updateStatusText(s.shown, s.resolved);
+        }
+      }
+    });
+  }
+
+  function ensureTabId() {
+    try {
+      tabId = sessionStorage.getItem('rgfTabId');
+      if (!tabId) {
+        tabId = 'tab' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem('rgfTabId', tabId);
+      }
+    } catch (e) {
+      tabId = 't' + Math.random().toString(36).slice(2);
+    }
   }
 
   function scanSafe() {
@@ -330,13 +390,28 @@
 
   function init() {
     if (!(document.body instanceof HTMLElement)) return;
-    buildPanel();
+    ensureTabId();
 
-    chrome.storage.local.get(CACHE_KEY, (data) => {
+    if (isTop) buildPanel();
+
+    chrome.storage.local.get([CACHE_KEY, FILTER_KEY], (data) => {
       if (data && data[CACHE_KEY] && typeof data[CACHE_KEY] === 'object') {
         cache = data[CACHE_KEY];
       }
+      const f = data && data[FILTER_KEY];
+      if (f) {
+        minG = typeof f.minG === 'number' ? f.minG : null;
+        maxG = typeof f.maxG === 'number' ? f.maxG : null;
+        hideUnknown = Boolean(f.hideUnknown);
+        hydratePanel();
+      }
       scanSafe();
+    });
+
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local' || !changes[FILTER_KEY]) return;
+      const f = changes[FILTER_KEY].newValue;
+      if (f) setFilter(f);
     });
 
     const debounced = schedule(scanSafe);

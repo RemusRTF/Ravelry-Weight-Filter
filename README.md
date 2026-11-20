@@ -20,7 +20,9 @@ weight**.
   range. Example: 100 m of worsted ≈ 56 g. Hover a chip to see how the estimate
   was computed — the real weight depends on the yarn you pick.
 - The floating **"Yarn grams filter" panel** (bottom-right) sets a
-  **min/max grams** range and can hide results with no gram info.
+  **min/max grams** range and can hide results with no gram info. The script
+  runs in every frame (`all_frames`) because Ravelry loads search results inside
+  an iframe; the panel and the chips stay in sync via `chrome.storage`.
 - Results are cached for 14 days per page; **clear cache** to refresh. Listings
   that paginate or re-sort update automatically.
 

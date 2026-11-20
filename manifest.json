@@ -16,6 +16,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.ravelry.com/patterns/*", "https://www.ravelry.com/projects/*"],
+      "all_frames": true,
       "js": ["content.js"],
       "css": ["panel.css"],
       "run_at": "document_idle"
